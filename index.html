@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#07111f">
+    <meta name="description" content="Investigate daily NASA POWER temperature data for Belagavi, India, from 2015 to 2025.">
+    <title>EARTHSCOPE — NASA Earth Data Investigator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="EARTHSCOPE home">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span>EARTH<span class="brand-light">SCOPE</span></span>
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="#investigation">Investigation</a>
+        <a href="#findings">Findings</a>
+        <a href="#methodology">Methodology</a>
+      </nav>
+      <a class="nasa-link" href="https://power.larc.nasa.gov/" target="_blank" rel="noreferrer">
+        <span class="nasa-orbit" aria-hidden="true">N</span>
+        <span>NASA POWER</span>
+        <span aria-hidden="true">↗</span>
+      </a>
+    </header>
+
+    <main>
+      <section class="hero" id="investigation">
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="live-dot"></span> EARTH DATA INVESTIGATION <span class="eyebrow-divider">/</span> 01</div>
+          <h1>Reading the<br><span>temperature</span> signal.</h1>
+          <p class="hero-description">A statistical look at daily near-surface air temperature in Belagavi, India, using NASA POWER meteorological reanalysis data.</p>
+          <div class="location-line">
+            <span class="location-icon" aria-hidden="true">◎</span>
+            <span>Belagavi, Karnataka, India</span>
+            <span class="coordinates">15.85° N&nbsp; / &nbsp;74.50° E</span>
+          </div>
+        </div>
+        <div class="hero-graphic" aria-hidden="true">
+          <div class="orbit orbit-one"></div>
+          <div class="orbit orbit-two"></div>
+          <div class="orbit orbit-three"></div>
+          <div class="planet"><span class="planet-shade"></span></div>
+          <div class="graphic-label label-top">T2M <span>°C</span></div>
+          <div class="graphic-label label-bottom">15° 51′ N</div>
+          <span class="graphic-cross cross-a">+</span>
+          <span class="graphic-cross cross-b">+</span>
+        </div>
+        <div class="hero-meta">
+          <div><span class="meta-label">OBSERVATION WINDOW</span><strong>2015 — 2025</strong></div>
+          <div><span class="meta-label">DATASET</span><strong>NASA POWER · DAILY</strong></div>
+          <div><span class="meta-label">PARAMETER</span><strong>2 M AIR TEMPERATURE</strong></div>
+        </div>
+      </section>
+
+      <section class="data-section section-wrap">
+        <div class="section-heading">
+          <div>
+            <div class="eyebrow">01 <span class="eyebrow-divider">/</span> LIVE OBSERVATIONS</div>
+            <h2>Temperature overview</h2>
+          </div>
+          <div class="data-status" id="data-status" role="status" aria-live="polite">
+            <span class="status-dot"></span><span id="status-text">Connecting to NASA POWER…</span>
+          </div>
+        </div>
+
+        <div class="error-panel" id="error-panel" hidden role="alert">
+          <div>
+            <strong>We couldn’t load the NASA POWER data.</strong>
+            <p id="error-message">Check your connection and try again.</p>
+          </div>
+          <button class="button button-secondary" id="retry-button" type="button">Try again <span aria-hidden="true">↻</span></button>
+        </div>
+
+        <div class="metrics-grid" id="metrics-grid" aria-live="polite">
+          <article class="metric-card">
+            <span class="metric-label">PERIOD MEAN</span>
+            <div class="metric-value" id="period-mean">—<small>°C</small></div>
+            <span class="metric-foot" id="period-mean-foot">Across valid daily observations</span>
+            <span class="metric-icon" aria-hidden="true">◌</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">LINEAR TREND</span>
+            <div class="metric-value" id="trend-value">—<small>°C / decade</small></div>
+            <span class="metric-foot" id="trend-foot">OLS slope of annual means</span>
+            <span class="metric-icon trend-icon" aria-hidden="true">↗</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">MANN–KENDALL</span>
+            <div class="metric-value metric-word" id="mk-result">—</div>
+            <span class="metric-foot" id="mk-foot">Two-sided test · α = 0.05</span>
+            <span class="metric-icon" aria-hidden="true">∑</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">VALID DAILY VALUES</span>
+            <div class="metric-value" id="valid-count">—</div>
+            <span class="metric-foot" id="coverage-foot">of expected observations</span>
+            <span class="metric-icon" aria-hidden="true">▦</span>
+          </article>
+        </div>
+
+        <article class="chart-card">
+          <div class="chart-header">
+            <div>
+              <span class="card-kicker">TEMPERATURE SERIES</span>
+              <h3 id="chart-title">Annual mean temperature</h3>
+            </div>
+            <div class="chart-controls" role="group" aria-label="Choose chart time scale">
+              <button class="chart-tab is-active" type="button" data-view="annual" aria-pressed="true">Annual</button>
+              <button class="chart-tab" type="button" data-view="daily" aria-pressed="false">Daily</button>
+            </div>
+          </div>
+          <div class="chart-legend">
+            <span><i class="legend-swatch legend-temp"></i><span id="legend-label">Annual mean (°C)</span></span>
+            <span id="trend-legend"><i class="legend-swatch legend-trend"></i>Linear fit</span>
+          </div>
+          <div class="chart-stage" id="chart-stage">
+            <canvas id="temperature-chart" role="img" aria-label="Annual mean temperature chart. Data is loading."></canvas>
+            <div class="chart-tooltip" id="chart-tooltip" role="status" hidden></div>
+            <div class="chart-empty" id="chart-empty">Waiting for NASA POWER observations…</div>
+          </div>
+          <p class="chart-note" id="chart-note">Each point is the arithmetic mean of valid daily T2M observations for that calendar year.</p>
+        </article>
+
+        <section class="table-section" aria-labelledby="table-title">
+          <div class="table-heading">
+            <div>
+              <span class="card-kicker">YEAR-BY-YEAR BREAKDOWN</span>
+              <h3 id="table-title">Annual temperature</h3>
+            </div>
+            <span class="table-unit">DAILY T2M · °C</span>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr><th scope="col">Year</th><th scope="col">Mean temperature</th><th scope="col">Valid days</th><th scope="col">Coverage</th><th scope="col">Departure from period mean</th></tr>
+              </thead>
+              <tbody id="year-table-body">
+                <tr><td class="table-loading" colspan="5">Annual results will appear when the live data arrives.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="findings-section" id="findings">
+        <div class="section-wrap findings-wrap">
+          <div class="section-heading">
+            <div>
+              <div class="eyebrow">02 <span class="eyebrow-divider">/</span> STATISTICAL READOUT</div>
+              <h2>What the series says</h2>
+            </div>
+            <span class="confidence-tag">95% CONFIDENCE LEVEL</span>
+          </div>
+          <div class="findings-grid">
+            <article class="finding-card finding-primary">
+              <span class="finding-index">A / TREND</span>
+              <h3 id="finding-trend-title">Awaiting observations</h3>
+              <p id="finding-trend-copy">The linear trend will be calculated from the annual means once NASA POWER data has loaded.</p>
+              <div class="finding-stat"><span>OLS SLOPE</span><strong id="finding-slope">—</strong></div>
+            </article>
+            <article class="finding-card">
+              <span class="finding-index">B / MONOTONICITY</span>
+              <h3 id="finding-mk-title">Mann–Kendall test</h3>
+              <p id="finding-mk-copy">A rank-based test evaluates whether annual temperatures show a monotonic trend; it does not assume a normal distribution.</p>
+              <div class="finding-stat"><span>p-VALUE</span><strong id="finding-p">—</strong></div>
+            </article>
+            <article class="finding-card">
+              <span class="finding-index">C / RANGE</span>
+              <h3 id="finding-range-title">Annual variability</h3>
+              <p id="finding-range-copy">The warmest and coolest annual means will be identified from available valid observations.</p>
+              <div class="finding-stat"><span>ANNUAL MEAN RANGE</span><strong id="finding-range">—</strong></div>
+            </article>
+          </div>
+          <p class="interpretation-note"><span aria-hidden="true">i</span> Statistical significance does not establish cause. Annual aggregation and the short record are important limitations when interpreting this local series.</p>
+        </div>
+      </section>
+
+      <section class="method-section section-wrap" id="methodology">
+        <div class="section-heading">
+          <div>
+            <div class="eyebrow">03 <span class="eyebrow-divider">/</span> DATA & METHODS</div>
+            <h2>Transparent by design.</h2>
+          </div>
+          <span class="method-badge">OPEN DATA · REPRODUCIBLE METHODS</span>
+        </div>
+        <div class="method-grid">
+          <article class="method-card source-card">
+            <span class="method-number">01</span>
+            <div>
+              <h3>NASA POWER</h3>
+              <p>Daily point data for <strong>T2M</strong> (air temperature at 2 m), requested for Belagavi from 2015-01-01 through 2025-12-31. The live API response identifies <strong>MERRA-2</strong> as the data source; POWER distributes these meteorological reanalysis data in an analysis-ready archive.</p>
+              <a class="text-link" href="https://power.larc.nasa.gov/docs/services/api/temporal/daily/" target="_blank" rel="noreferrer">Explore the POWER daily API <span aria-hidden="true">↗</span></a>
+            </div>
+          </article>
+          <article class="method-card">
+            <span class="method-number">02</span>
+            <div>
+              <h3>Annual averages</h3>
+              <p>Valid daily values are averaged arithmetically within each calendar year. NASA's missing-data sentinel (−999) is excluded. Coverage is the valid-day count divided by calendar days in that year.</p>
+            </div>
+          </article>
+          <article class="method-card">
+            <span class="method-number">03</span>
+            <div>
+              <h3>Trend & significance</h3>
+              <p>Ordinary least-squares regression estimates the slope of annual means against year. The two-sided Mann–Kendall test uses a tie-corrected variance and continuity-corrected normal approximation; significance threshold α = 0.05.</p>
+            </div>
+          </article>
+          <article class="method-card">
+            <span class="method-number">04</span>
+            <div>
+              <h3>How to read this</h3>
+              <p>Annual means smooth out day-to-day weather and seasonal cycles. The record is short, local-scale results may differ from regional trends, and POWER data is not a substitute for ground-station measurements.</p>
+            </div>
+          </article>
+        </div>
+        <div class="source-footer">
+          <span>DATA PROVIDED BY NASA POWER · POWER LARC</span>
+          <span>POINT: 15.8497° N, 74.4977° E</span>
+          <a href="https://power.larc.nasa.gov/" target="_blank" rel="noreferrer">POWER project home ↗</a>
+        </div>
+      </section>
+    </main>
+    <footer class="footer">
+      <a class="brand footer-brand" href="#"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span><span>EARTH<span class="brand-light">SCOPE</span></span></a>
+      <span>AN OPEN-DATA EXPLORATION OF OUR CHANGING PLANET</span>
+      <a href="#investigation">BACK TO TOP ↑</a>
+    </footer>
+  </body>
+</html>
