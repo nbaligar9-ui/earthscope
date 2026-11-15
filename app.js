@@ -1,14 +1,24 @@
 "use strict";
 
 (() => {
-  const START_YEAR = 2015;
-  const END_YEAR = 2025;
-  const LATITUDE = 15.8497;
-  const LONGITUDE = 74.4977;
+  const MIN_YEAR = 2015;
+  const MAX_YEAR = 2025;
   const ALPHA = 0.05;
-  const API_URL = `https://power.larc.nasa.gov/api/temporal/daily/point?parameters=T2M&community=RE&longitude=${LONGITUDE}&latitude=${LATITUDE}&start=${START_YEAR}0101&end=${END_YEAR}1231&format=JSON`;
+  const LOCATIONS = {
+    belagavi: { name: "Belagavi, Karnataka", country: "India", latitude: 15.8497, longitude: 74.4977 },
+    bengaluru: { name: "Bengaluru, Karnataka", country: "India", latitude: 12.9716, longitude: 77.5946 },
+    mumbai: { name: "Mumbai, Maharashtra", country: "India", latitude: 19.0760, longitude: 72.8777 },
+    delhi: { name: "Delhi, NCT", country: "India", latitude: 28.6139, longitude: 77.2090 },
+    chennai: { name: "Chennai, Tamil Nadu", country: "India", latitude: 13.0827, longitude: 80.2707 },
+    london: { name: "London", country: "United Kingdom", latitude: 51.5072, longitude: -0.1276 },
+  };
 
   const elements = {
+    form: document.getElementById("investigation-form"),
+    locationSelect: document.getElementById("location-select"),
+    startYear: document.getElementById("start-year"),
+    endYear: document.getElementById("end-year"),
+    submitButton: document.querySelector("#investigation-form button[type='submit']"),
     status: document.getElementById("data-status"),
     statusText: document.getElementById("status-text"),
     errorPanel: document.getElementById("error-panel"),
@@ -31,6 +41,49 @@
   let missingCount = 0;
   let view = "annual";
   let resizeObserver;
+  let requestController = null;
+
+  function getSelection() {
+    const location = LOCATIONS[elements.locationSelect.value];
+    const startYear = Number(elements.startYear.value);
+    const endYear = Number(elements.endYear.value);
+    if (!location || !Number.isInteger(startYear) || !Number.isInteger(endYear)
+      || startYear < MIN_YEAR || endYear > MAX_YEAR || startYear > endYear) {
+      throw new Error("Choose a supported location and a year range from 2015 to 2025.");
+    }
+    return { location, startYear, endYear };
+  }
+
+  function makeApiUrl(location, startYear, endYear) {
+    const parameters = new URLSearchParams({
+      parameters: "T2M",
+      community: "RE",
+      longitude: String(location.longitude),
+      latitude: String(location.latitude),
+      start: `${startYear}0101`,
+      end: `${endYear}1231`,
+      format: "JSON",
+    });
+    return `https://power.larc.nasa.gov/api/temporal/daily/point?${parameters.toString()}`;
+  }
+
+  function updateLocationLabels(location, startYear, endYear) {
+    const heroLocation = document.getElementById("hero-location");
+    const heroCoordinates = document.getElementById("hero-coordinates");
+    const latitudeHemisphere = location.latitude < 0 ? "S" : "N";
+    const longitudeHemisphere = location.longitude < 0 ? "W" : "E";
+    heroLocation.textContent = `${location.name}, ${location.country}`;
+    heroCoordinates.textContent = `${Math.abs(location.latitude).toFixed(2)}° ${latitudeHemisphere} / ${Math.abs(location.longitude).toFixed(2)}° ${longitudeHemisphere}`;
+    document.getElementById("graphic-latitude").textContent = `${Math.abs(location.latitude).toFixed(2)}° ${latitudeHemisphere}`;
+    document.getElementById("hero-period").textContent = `${startYear} — ${endYear}`;
+    document.getElementById("method-location").textContent = location.name;
+    document.getElementById("method-start").textContent = `${startYear}-01-01`;
+    document.getElementById("method-end").textContent = `${endYear}-12-31`;
+    document.getElementById("source-coordinates").textContent =
+      `POINT: ${Math.abs(location.latitude).toFixed(4)}° ${latitudeHemisphere}, ${Math.abs(location.longitude).toFixed(4)}° ${longitudeHemisphere}`;
+    elements.chartTitle.textContent = `${view === "annual" ? "Annual mean" : "Daily"} temperature · ${location.name.split(",")[0]}`;
+    document.getElementById("table-title").textContent = `Annual temperature · ${location.name.split(",")[0]}`;
+  }
 
   function setStatus(message, state) {
     elements.statusText.textContent = message;
@@ -38,13 +91,18 @@
     elements.status.classList.toggle("is-loading", state === "loading");
   }
 
-  function setLoading(isLoading) {
+  function setLoading(isLoading, selection) {
     elements.retryButton.disabled = isLoading;
     elements.retryButton.textContent = isLoading ? "Loading…" : "Try again ↻";
     elements.errorPanel.hidden = true;
     elements.chartEmpty.hidden = false;
-    elements.chartEmpty.textContent = isLoading ? "Requesting live observations from NASA POWER…" : "Waiting for NASA POWER observations…";
-    setStatus(isLoading ? "Requesting NASA POWER data…" : "Connecting to NASA POWER…", isLoading ? "loading" : "");
+    elements.chartEmpty.textContent = isLoading
+      ? `Requesting live NASA POWER data for ${selection.location.name}…`
+      : "Waiting for NASA POWER observations…";
+    elements.canvas.setAttribute("aria-label", `Loading NASA POWER temperature data for ${selection.location.name}, ${selection.startYear} to ${selection.endYear}.`);
+    setStatus(isLoading
+      ? `Loading ${selection.location.name} · ${selection.startYear}–${selection.endYear}…`
+      : "Connecting to NASA POWER…", isLoading ? "loading" : "");
   }
 
   function formatNumber(value, digits = 2) {
@@ -55,9 +113,9 @@
     return new Date(Date.UTC(year + 1, 0, 1) - Date.UTC(year, 0, 1)).getTime() / 86400000;
   }
 
-  function parseDailyResponse(payload) {
+  function parseDailyResponse(payload, startYear, endYear) {
     const header = payload && payload.header;
-    if (!header || header.start !== `${START_YEAR}0101` || header.end !== `${END_YEAR}1231`) {
+    if (!header || header.start !== `${startYear}0101` || header.end !== `${endYear}1231`) {
       throw new Error("The NASA POWER response metadata did not match the requested date range.");
     }
     const fillValue = Number(header.fill_value);
@@ -71,6 +129,7 @@
 
     const parsed = [];
     let missingValues = 0;
+    const seenDates = new Set();
     for (const [date, rawValue] of Object.entries(values)) {
       if (!/^\d{8}$/.test(date)) {
         throw new Error("The NASA POWER T2M response contained an invalid date key.");
@@ -80,12 +139,16 @@
       const day = Number(date.slice(6, 8));
       const timestamp = Date.UTC(year, month - 1, day);
       const parsedDate = new Date(timestamp);
-      if (year < START_YEAR || year > END_YEAR
+      if (year < startYear || year > endYear
         || parsedDate.getUTCFullYear() !== year
         || parsedDate.getUTCMonth() !== month - 1
         || parsedDate.getUTCDate() !== day) {
         throw new Error(`The NASA POWER T2M response contained an out-of-range or invalid date: ${date}.`);
       }
+      if (seenDates.has(date)) {
+        throw new Error(`The NASA POWER T2M response contained a duplicate date: ${date}.`);
+      }
+      seenDates.add(date);
       if (typeof rawValue !== "number" && (typeof rawValue !== "string" || rawValue.trim() === "")) {
         throw new Error(`The NASA POWER T2M response contained an invalid value for ${date}.`);
       }
@@ -111,9 +174,9 @@
     return { records: parsed, missingCount: missingValues };
   }
 
-  function summarize(dailyValues) {
+  function summarize(dailyValues, startYear, endYear) {
     const sums = new Map();
-    for (let year = START_YEAR; year <= END_YEAR; year++) sums.set(year, { sum: 0, count: 0 });
+    for (let year = startYear; year <= endYear; year++) sums.set(year, { sum: 0, count: 0 });
     let total = 0;
     for (const record of dailyValues) {
       const bucket = sums.get(record.year);
@@ -124,10 +187,9 @@
     }
     const annual = [];
     for (const [year, bucket] of sums) {
-      if (bucket.count === 0) continue;
       annual.push({
         year,
-        mean: bucket.sum / bucket.count,
+        mean: bucket.count ? bucket.sum / bucket.count : null,
         count: bucket.count,
         coverage: bucket.count / expectedDays(year),
       });
@@ -179,10 +241,12 @@
     return 0.5 * (1 + Math.sign(z) * erf);
   }
 
-  function updateMetrics(annual, overallMean, mk) {
+  function updateMetrics(annual, overallMean) {
+    const selection = getSelection();
+    const availableYears = annual.filter((point) => Number.isFinite(point.mean));
     const count = daily.length;
-    const expected = Array.from({ length: END_YEAR - START_YEAR + 1 }, (_, index) => expectedDays(START_YEAR + index))
-      .reduce((sum, value) => sum + value, 0);
+    let expected = 0;
+    for (let year = selection.startYear; year <= selection.endYear; year++) expected += expectedDays(year);
     const coverage = count / expected * 100;
     document.getElementById("period-mean").innerHTML = `${formatNumber(overallMean)}<small>°C</small>`;
     const missingNote = missingCount ? ` · ${missingCount.toLocaleString()} NASA missing-value markers excluded` : "";
@@ -190,18 +254,26 @@
     document.getElementById("valid-count").textContent = count.toLocaleString();
     document.getElementById("coverage-foot").textContent = `${formatNumber(coverage, 1)}% of ${expected.toLocaleString()} calendar days`;
 
-    if (annual.length >= 2) {
-      trend = linearRegression(annual);
+    if (availableYears.length >= 2) {
+      trend = linearRegression(availableYears);
       const perDecade = trend.slope * 10;
       document.getElementById("trend-value").innerHTML = `${perDecade >= 0 ? "+" : ""}${formatNumber(perDecade)}<small>°C / decade</small>`;
-      document.getElementById("trend-foot").textContent = `OLS slope · ${annual.length} annual means`;
+      document.getElementById("trend-foot").textContent = `OLS slope · ${availableYears.length} annual means`;
       document.getElementById("finding-slope").textContent = `${trend.slope >= 0 ? "+" : ""}${formatNumber(trend.slope, 4)} °C/year`;
       document.getElementById("finding-trend-title").textContent = perDecade > 0 ? "Warming direction" : perDecade < 0 ? "Cooling direction" : "No linear change";
       document.getElementById("finding-trend-copy").textContent = `The fitted line changes by ${formatNumber(Math.abs(perDecade))} °C per decade${perDecade >= 0 ? " upward" : " downward"}. This is a descriptive estimate from annual means, not a forecast.`;
+    } else {
+      trend = null;
+      document.getElementById("trend-value").innerHTML = `—<small>°C / decade</small>`;
+      document.getElementById("trend-foot").textContent = "At least two annual means are needed";
+      document.getElementById("finding-trend-title").textContent = "Trend unavailable";
+      document.getElementById("finding-trend-copy").textContent = "At least two years with valid daily readings are needed to calculate a linear temperature trend.";
+      document.getElementById("finding-slope").textContent = "—";
     }
+    elements.trendLegend.hidden = view !== "annual" || !trend;
 
-    if (annual.length >= 3) {
-      const mkResult = mannKendall(annual.map((point) => point.mean));
+    if (availableYears.length >= 3) {
+      const mkResult = mannKendall(availableYears.map((point) => point.mean));
       const significant = mkResult.p < ALPHA;
       const direction = mkResult.score > 0 ? "increasing" : mkResult.score < 0 ? "decreasing" : "no directional";
       document.getElementById("mk-result").textContent = significant ? `Significant ${direction}` : "Not significant";
@@ -209,9 +281,15 @@
       document.getElementById("finding-mk-title").textContent = significant ? `Significant ${direction} trend` : "No significant trend detected";
       document.getElementById("finding-mk-copy").textContent = `Mann–Kendall S = ${mkResult.score}; Z = ${formatNumber(mkResult.z, 2)}. ${significant ? `The monotonic trend is statistically significant at α = ${ALPHA}.` : `The evidence is insufficient to reject no monotonic trend at α = ${ALPHA}.`}`;
       document.getElementById("finding-p").textContent = formatP(mkResult.p);
-      renderTable(annual, overallMean);
-      updateRangeFinding(annual);
+    } else {
+      document.getElementById("mk-result").textContent = "Insufficient years";
+      document.getElementById("mk-foot").textContent = "At least three annual means are needed";
+      document.getElementById("finding-mk-title").textContent = "Mann–Kendall test unavailable";
+      document.getElementById("finding-mk-copy").textContent = "Select a period with at least three years of valid annual readings to calculate the monotonic trend test.";
+      document.getElementById("finding-p").textContent = "—";
     }
+    renderTable(annual, overallMean);
+    if (availableYears.length) updateRangeFinding(availableYears);
   }
 
   function formatP(value) {
@@ -222,8 +300,8 @@
     const warmest = annual.reduce((a, b) => b.mean > a.mean ? b : a);
     const coolest = annual.reduce((a, b) => b.mean < a.mean ? b : a);
     document.getElementById("finding-range-title").textContent = "Warmest & coolest years";
-    document.getElementById("finding-range-copy").textContent = `The annual mean was highest in ${warmest.year} and lowest in ${coolest.year}.`;
-    document.getElementById("finding-range").textContent = `${formatNumber(coolest.mean)}–${formatNumber(warmest.mean)} °C`;
+    document.getElementById("finding-range-copy").textContent = `Warmest: ${warmest.year} at ${formatNumber(warmest.mean)} °C. Coolest: ${coolest.year} at ${formatNumber(coolest.mean)} °C.`;
+    document.getElementById("finding-range").textContent = `${warmest.year} / ${coolest.year}`;
   }
 
   function renderTable(annual, overallMean) {
@@ -233,7 +311,7 @@
       const departure = point.mean - overallMean;
       const values = [
         String(point.year),
-        `${formatNumber(point.mean)} °C`,
+        Number.isFinite(point.mean) ? `${formatNumber(point.mean)} °C` : "No valid readings",
         `${point.count} / ${expectedDays(point.year)}`,
       ];
       for (const value of values) {
@@ -252,7 +330,9 @@
       coverageCell.append(track, document.createTextNode(`${formatNumber(point.coverage * 100, 1)}%`));
       row.appendChild(coverageCell);
       const departureCell = document.createElement("td");
-      departureCell.textContent = `${departure >= 0 ? "+" : ""}${formatNumber(departure)} °C`;
+      departureCell.textContent = Number.isFinite(point.mean)
+        ? `${departure >= 0 ? "+" : ""}${formatNumber(departure)} °C`
+        : "—";
       row.appendChild(departureCell);
       elements.tableBody.appendChild(row);
     }
@@ -274,56 +354,96 @@
     document.getElementById("finding-mk-title").textContent = "Mann–Kendall test";
     document.getElementById("finding-mk-copy").textContent = "A rank-based test evaluates whether annual temperatures show a monotonic trend; it does not assume a normal distribution.";
     document.getElementById("finding-p").textContent = "—";
-    document.getElementById("finding-range-title").textContent = "Annual variability";
+    document.getElementById("finding-range-title").textContent = "Warmest & coolest years";
     document.getElementById("finding-range-copy").textContent = "The warmest and coolest annual means will be identified from available valid observations.";
     document.getElementById("finding-range").textContent = "—";
     elements.tableBody.innerHTML = '<tr><td class="table-loading" colspan="5">No data loaded. Try again to retrieve NASA POWER observations.</td></tr>';
   }
 
+  function clearAnalysis() {
+    daily = [];
+    yearly = [];
+    trend = null;
+    resetAnalysis();
+    elements.tooltip.hidden = true;
+    clearChart();
+  }
+
   async function fetchData() {
-    setLoading(true);
+    let selection;
     try {
-      const response = await fetch(API_URL, { headers: { Accept: "application/json" } });
+      selection = getSelection();
+    } catch (error) {
+      if (requestController) requestController.abort();
+      requestController = null;
+      clearAnalysis();
+      elements.errorMessage.textContent = error.message;
+      elements.errorPanel.hidden = false;
+      elements.chartEmpty.hidden = false;
+      elements.chartEmpty.textContent = "Choose a valid location and year range to load data.";
+      elements.retryButton.disabled = false;
+      elements.retryButton.textContent = "Try again ↻";
+      elements.submitButton.textContent = "Run investigation ↗";
+      setStatus("Choose a valid investigation range", "error");
+      return;
+    }
+
+    if (requestController) requestController.abort();
+    const controller = new AbortController();
+    requestController = controller;
+    updateLocationLabels(selection.location, selection.startYear, selection.endYear);
+    clearAnalysis();
+    setLoading(true, selection);
+    elements.submitButton.textContent = "Loading NASA data…";
+    try {
+      const response = await fetch(makeApiUrl(selection.location, selection.startYear, selection.endYear), {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted || requestController !== controller) return;
       if (!response.ok) {
         throw new Error(`NASA POWER responded with HTTP ${response.status}. Please try again later.`);
       }
       const payload = await response.json();
+      if (controller.signal.aborted || requestController !== controller) return;
       if (payload && Array.isArray(payload.messages) && payload.messages.length > 0) {
         throw new Error(payload.messages.join(" "));
       }
-      const parsed = parseDailyResponse(payload);
+      const parsed = parseDailyResponse(payload, selection.startYear, selection.endYear);
       daily = parsed.records;
       missingCount = parsed.missingCount;
-      const result = summarize(daily);
-      yearly = result.annual;
-      if (yearly.length < 3) {
-        throw new Error(`NASA POWER returned only ${yearly.length} years with valid readings; at least three are needed for the statistical analysis.`);
+      if (daily.length === 0) {
+        throw new Error("NASA POWER returned no valid T2M observations for this location and year range.");
       }
+      const result = summarize(daily, selection.startYear, selection.endYear);
+      yearly = result.annual;
       updateMetrics(yearly, result.overallMean);
+      if (controller.signal.aborted || requestController !== controller) return;
       elements.errorPanel.hidden = true;
       elements.chartEmpty.hidden = true;
       elements.retryButton.disabled = false;
       elements.retryButton.textContent = "Try again ↻";
-      setStatus(`Live data loaded · ${daily.length.toLocaleString()} daily values`, "");
-      drawChart();
+      elements.submitButton.textContent = "Run investigation ↗";
+      setStatus(`Live NASA POWER data · ${daily.length.toLocaleString()} daily values`, "");
+      setView(view);
     } catch (error) {
-      daily = [];
-      yearly = [];
-      trend = null;
-      resetAnalysis();
+      if (controller.signal.aborted || requestController !== controller) return;
+      clearAnalysis();
       const message = error instanceof TypeError
-        ? "The data request failed. Check your internet connection, or open this page through a local web server and try again."
+        ? "The NASA POWER request failed. Check your internet connection and try again."
         : error instanceof Error ? error.message : "An unexpected error occurred while loading NASA POWER data.";
       elements.errorMessage.textContent = message;
       elements.errorPanel.hidden = false;
       elements.chartEmpty.hidden = false;
-      elements.chartEmpty.textContent = "No chart available until live data loads.";
-      elements.tooltip.hidden = true;
-      elements.tableBody.innerHTML = '<tr><td class="table-loading" colspan="5">No data loaded. Try again to retrieve NASA POWER observations.</td></tr>';
+      elements.chartEmpty.textContent = `No data available for ${selection.location.name} until the request succeeds.`;
       elements.retryButton.disabled = false;
       elements.retryButton.textContent = "Try again ↻";
-      setStatus("NASA POWER data unavailable", "error");
+      elements.submitButton.textContent = "Run investigation ↗";
+      setStatus(`NASA POWER data unavailable · ${selection.location.name}`, "error");
       clearChart();
+    } finally {
+      if (requestController === controller) requestController = null;
     }
   }
 
@@ -338,7 +458,8 @@
   }
 
   function chartData() {
-    return view === "annual" ? yearly.map((item) => ({ x: item.year, value: item.mean, label: String(item.year) }))
+    return view === "annual" ? yearly.filter((item) => Number.isFinite(item.mean))
+      .map((item) => ({ x: item.year, value: item.mean, label: String(item.year) }))
       : daily.map((item) => ({
         x: item.timestamp,
         value: item.value,
@@ -389,7 +510,9 @@
       context.fillText(value.toFixed(1), padding.left - 10, y);
     }
 
-    const yearTicks = isAnnual ? data.map((item) => item.x) : Array.from({ length: END_YEAR - START_YEAR + 1 }, (_, i) => START_YEAR + i);
+    const selection = getSelection();
+    const yearTicks = isAnnual ? data.map((item) => item.x)
+      : Array.from({ length: selection.endYear - selection.startYear + 1 }, (_, i) => selection.startYear + i);
     context.fillStyle = "#71869c";
     context.textAlign = "center";
     context.textBaseline = "top";
@@ -449,11 +572,14 @@
   function setView(nextView) {
     view = nextView;
     const isAnnual = view === "annual";
-    elements.chartTitle.textContent = isAnnual ? "Annual mean temperature" : "Daily temperature";
+    const location = LOCATIONS[elements.locationSelect.value];
+    elements.chartTitle.textContent = `${isAnnual ? "Annual mean" : "Daily"} temperature · ${location.name.split(",")[0]}`;
     elements.legendLabel.textContent = isAnnual ? "Annual mean (°C)" : "Daily T2M (°C)";
-    elements.trendLegend.hidden = !isAnnual;
+    elements.trendLegend.hidden = !isAnnual || !trend;
     elements.chartNote.textContent = isAnnual
-      ? "Each point is the arithmetic mean of valid daily T2M observations for that calendar year. Dashed line: ordinary least-squares fit."
+      ? trend
+        ? "Each point is the arithmetic mean of valid daily T2M observations for that calendar year. Dashed line: ordinary least-squares fit."
+        : "Each point is an annual mean. A trend line requires at least two years with valid readings."
       : "Daily T2M values from NASA POWER. Seasonal cycles and day-to-day variability are visible; no trend line is fitted to this view.";
     document.querySelectorAll(".chart-tab").forEach((button) => {
       const active = button.dataset.view === view;
@@ -483,7 +609,12 @@
     elements.tooltip.style.top = `${Math.max(5, event.clientY - rect.top - 48)}px`;
   }
 
-  elements.retryButton.addEventListener("click", fetchData);
+  elements.form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void fetchData();
+  });
+  elements.locationSelect.addEventListener("change", () => { void fetchData(); });
+  elements.retryButton.addEventListener("click", () => { void fetchData(); });
   elements.canvas.addEventListener("pointermove", handlePointerMove);
   elements.canvas.addEventListener("pointerleave", () => { elements.tooltip.hidden = true; });
   document.querySelectorAll(".chart-tab").forEach((button) => {
@@ -496,5 +627,6 @@
     window.addEventListener("resize", drawChart);
   }
   void resizeObserver;
-  fetchData();
+  updateLocationLabels(LOCATIONS[elements.locationSelect.value], Number(elements.startYear.value), Number(elements.endYear.value));
+  void fetchData();
 })();

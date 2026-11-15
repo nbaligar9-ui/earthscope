@@ -112,6 +112,15 @@ button { font: inherit; }
 .data-status.is-error .status-dot { background: #f58b83; box-shadow: 0 0 9px rgba(245, 139, 131, .45); }
 .data-status.is-loading .status-dot { background: var(--orange); box-shadow: 0 0 9px rgba(240, 173, 114, .45); animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .35; } }
+.investigation-controls { display: grid; grid-template-columns: minmax(190px, 1.5fr) minmax(92px, .55fr) 12px minmax(92px, .55fr) auto; align-items: end; gap: 12px; padding: 15px; border: 1px solid var(--line); border-radius: 7px; background: rgba(12, 25, 41, .8); margin: 0 0 20px; }
+.control-field { min-width: 0; display: grid; gap: 7px; }
+.control-field > span { color: #8297ad; font: 500 9px var(--font-mono); letter-spacing: .1em; }
+.control-field select { width: 100%; min-height: 38px; border: 1px solid var(--line-bright); border-radius: 4px; background: #091624; color: var(--text); padding: 0 10px; font: 12px var(--font-body); }
+.control-field select:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.range-separator { align-self: end; padding-bottom: 11px; text-align: center; color: var(--quiet); font: 12px var(--font-mono); }
+.button-primary { min-height: 38px; border-color: rgba(98, 215, 236, .34); background: rgba(98, 215, 236, .1); color: #c9f5fa; }
+.button-primary:hover { background: rgba(98, 215, 236, .16); }
+.button:disabled { cursor: wait; opacity: .65; }
 .error-panel { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 20px; border: 1px solid rgba(245, 139, 131, .28); border-radius: 8px; background: rgba(111, 42, 44, .12); margin: 0 0 20px; }
 .error-panel[hidden] { display: none; }
 .error-panel strong { font-size: 13px; color: #f6b2aa; }
@@ -220,6 +229,9 @@ td.table-loading { color: var(--quiet); text-align: center; font: 12px var(--fon
   .hero-meta strong { font-size: 9px; }
   .coordinates { display: none; }
   .section-wrap { padding-left: 5%; padding-right: 5%; }
+  .investigation-controls { grid-template-columns: 1fr 1fr; gap: 11px; padding: 12px; }
+  .location-field, .investigation-controls .button-primary { grid-column: 1 / -1; }
+  .range-separator { display: none; }
   .data-section, .findings-wrap { padding-top: 52px; padding-bottom: 56px; }
   .section-heading { align-items: flex-start; flex-direction: column; gap: 13px; margin-bottom: 22px; }
   .section-heading h2 { font-size: 26px; }
